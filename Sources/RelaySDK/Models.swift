@@ -1,10 +1,16 @@
 import Foundation
 
 /// The published SDK version. Kept in sync with the release tag by scripts/check-sdk-versions.mjs.
-public let relaySDKVersion = "1.7.0"
+public let relaySDKVersion = "1.8.0"
 
 /// A task lifecycle event from the server.
 public enum TaskEventType: String, Sendable, CaseIterable {
+    /// A booked task's search opened: Relay is now looking for a rider.
+    case dispatchStarted = "TASK_DISPATCH_STARTED"
+    /// The task keeps looking for a rider after its first offers, until `searchExpiresAt`.
+    case searching = "TASK_SEARCHING"
+    /// A waiting manual task has eligible riders near its pickup (`ridersNearby`, a count only).
+    case ridersNearby = "TASK_RIDERS_NEARBY"
     case offered = "TASK_OFFERED"
     case assigned = "TASK_ASSIGNED"
     case inProgress = "TASK_IN_PROGRESS"
@@ -16,6 +22,9 @@ public enum TaskEventType: String, Sendable, CaseIterable {
     /// The task status this event moves the task to, if it changes status.
     public var status: TaskStatus? {
         switch self {
+        case .dispatchStarted: return .pending
+        case .searching: return .searching
+        case .ridersNearby: return nil
         case .offered: return .offered
         case .assigned: return .assigned
         case .inProgress: return .inProgress
@@ -28,7 +37,11 @@ public enum TaskEventType: String, Sendable, CaseIterable {
 }
 
 public enum TaskStatus: String, Sendable, Codable {
+    /// Booked for a pickup time; Relay has not started looking yet.
+    case scheduled = "SCHEDULED"
     case pending = "PENDING"
+    /// Still looking for a rider after the first offers.
+    case searching = "SEARCHING"
     case offered = "OFFERED"
     case assigned = "ASSIGNED"
     case inProgress = "IN_PROGRESS"
@@ -45,7 +58,11 @@ public enum TaskStatus: String, Sendable, Codable {
 public struct TaskEvent: Sendable, Decodable, Equatable {
     public let type: TaskEventType
     public let taskId: String
+    /// Nil when the server sent no status, or one this SDK version does not know: Relay adds
+    /// statuses over time, and `rawStatus` keeps whatever the server sent.
     public let status: TaskStatus?
+    /// The status exactly as the server sent it, including ones newer than this SDK.
+    public let rawStatus: String?
     public let riderId: String?
     public let developerId: String?
     public let currentStageIndex: Int?
@@ -59,13 +76,21 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
     public let deliveryFee: Int?
     /// TASK_COMPLETED for tasks created with a completion code.
     public let completionCodeVerified: Bool?
+    /// TASK_SEARCHING: WAIT_FOR_RIDER or SCHEDULED (or a newer strategy).
+    public let strategy: String?
+    /// TASK_DISPATCH_STARTED: when the rider should reach the pickup (ISO 8601).
+    public let pickupAt: String?
+    /// TASK_DISPATCH_STARTED / TASK_SEARCHING: when Relay stops looking (ISO 8601).
+    public let searchExpiresAt: String?
+    /// TASK_RIDERS_NEARBY: how many eligible riders were found.
+    public let ridersNearby: Int?
     /// When it happened (ISO 8601), from whichever timestamp the event carries.
     public let at: String?
 
     enum CodingKeys: String, CodingKey {
         case type, taskId, status, riderId, developerId, currentStageIndex, stageIndex, nextStageIndex, reason
         case cancelledBy, deliveryFee, completionCodeVerified, timestamp, assignedAt, startedAt, completedAt
-        case failedAt, cancelledAt, offeredAt
+        case failedAt, cancelledAt, offeredAt, strategy, pickupAt, searchExpiresAt, ridersNearby, searchingAt, detectedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -75,7 +100,8 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
         }
         self.type = type
         taskId = try c.decode(String.self, forKey: .taskId)
-        status = try? c.decodeIfPresent(TaskStatus.self, forKey: .status)
+        rawStatus = try? c.decodeIfPresent(String.self, forKey: .status)
+        status = rawStatus.flatMap(TaskStatus.init(rawValue:))
         riderId = try? c.decodeIfPresent(String.self, forKey: .riderId)
         developerId = try? c.decodeIfPresent(String.self, forKey: .developerId)
         currentStageIndex = try? c.decodeIfPresent(Int.self, forKey: .currentStageIndex)
@@ -85,7 +111,13 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
         cancelledBy = try? c.decodeIfPresent(String.self, forKey: .cancelledBy)
         deliveryFee = try? c.decodeIfPresent(Int.self, forKey: .deliveryFee)
         completionCodeVerified = try? c.decodeIfPresent(Bool.self, forKey: .completionCodeVerified)
-        let timestamps: [CodingKeys] = [.timestamp, .completedAt, .cancelledAt, .failedAt, .assignedAt, .startedAt, .offeredAt]
+        strategy = try? c.decodeIfPresent(String.self, forKey: .strategy)
+        pickupAt = try? c.decodeIfPresent(String.self, forKey: .pickupAt)
+        searchExpiresAt = try? c.decodeIfPresent(String.self, forKey: .searchExpiresAt)
+        ridersNearby = try? c.decodeIfPresent(Int.self, forKey: .ridersNearby)
+        let timestamps: [CodingKeys] = [
+            .timestamp, .completedAt, .cancelledAt, .failedAt, .assignedAt, .startedAt, .searchingAt, .detectedAt, .offeredAt,
+        ]
         at = timestamps.lazy.compactMap { try? c.decodeIfPresent(String.self, forKey: $0) }.first
     }
 }

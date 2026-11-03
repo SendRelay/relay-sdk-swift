@@ -24,6 +24,10 @@ private func apiJSON(_ event: RelayEvent) -> [String: Any] {
         out["stageIndex"] = e.stageIndex
         out["reason"] = e.reason
         out["cancelledBy"] = e.cancelledBy
+        out["strategy"] = e.strategy
+        out["pickupAt"] = e.pickupAt
+        out["searchExpiresAt"] = e.searchExpiresAt
+        out["ridersNearby"] = e.ridersNearby
         return out
     case .riderLocation(let u):
         var out: [String: Any] = [
@@ -129,6 +133,19 @@ final class ConformanceTests: XCTestCase {
 final class TaskTrackerStateTests: XCTestCase {
     private func event(_ json: String) -> RelayEvent { RelayProtocol.parse(Data(json.utf8))! }
 
+    func testKeepsAStatusThisVersionDoesNotKnow() {
+        guard case let .task(e) = event(#"{"type":"TASK_ASSIGNED","taskId":"t1","status":"SOME_FUTURE_STATUS"}"#) else {
+            return XCTFail("expected a task event")
+        }
+        XCTAssertNil(e.status)
+        XCTAssertEqual(e.rawStatus, "SOME_FUTURE_STATUS")
+        guard case let .task(known) = event(#"{"type":"TASK_ASSIGNED","taskId":"t1","status":"ASSIGNED"}"#) else {
+            return XCTFail("expected a task event")
+        }
+        XCTAssertEqual(known.status, .assigned)
+        XCTAssertEqual(known.rawStatus, "ASSIGNED")
+    }
+
     func testFollowsADelivery() {
         var state = TaskTrackerState(taskId: "t1")
         state = state.applying(event(#"{"type":"TASK_ASSIGNED","taskId":"t1","status":"ASSIGNED","currentStageIndex":0}"#))
@@ -145,6 +162,19 @@ final class TaskTrackerStateTests: XCTestCase {
         state = state.applying(event(#"{"type":"TASK_COMPLETED","taskId":"t1","status":"COMPLETED"}"#))
         XCTAssertTrue(state.finished)
         XCTAssertEqual(state.events.map(\.type), [.completed, .stageCompleted, .assigned])
+    }
+
+    func testFollowsABooking() {
+        var state = TaskTrackerState(taskId: "t1", status: .scheduled)
+        XCTAssertFalse(state.finished)
+        state = state.applying(event(#"{"type":"TASK_DISPATCH_STARTED","taskId":"t1","status":"PENDING","pickupAt":"2026-11-05T15:00:00.000Z","searchExpiresAt":"2026-11-05T15:30:00.000Z","startedAt":"2026-11-05T14:40:00.000Z"}"#))
+        XCTAssertEqual(state.status, .pending)
+        XCTAssertEqual(state.searchExpiresAt, "2026-11-05T15:30:00.000Z")
+        state = state.applying(event(#"{"type":"TASK_SEARCHING","taskId":"t1","status":"SEARCHING","strategy":"SCHEDULED","searchExpiresAt":"2026-11-05T15:30:00.000Z","searchingAt":"2026-11-05T14:43:00.000Z"}"#))
+        state = state.applying(event(#"{"type":"TASK_RIDERS_NEARBY","taskId":"t1","ridersNearby":2,"detectedAt":"2026-11-05T14:50:00.000Z"}"#))
+        XCTAssertEqual(state.status, .searching, "riders nearby leaves the status alone")
+        XCTAssertEqual(state.events.first?.ridersNearby, 2)
+        XCTAssertEqual(state.events.map(\.type), [.ridersNearby, .searching, .dispatchStarted])
     }
 
     func testIgnoresOtherTasks() {

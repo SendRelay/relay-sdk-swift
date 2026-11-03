@@ -42,16 +42,26 @@ public struct TaskTrackerState: Sendable, Equatable {
     public var rider: RiderLocation?
     public var riderId: String?
     public var eta: TrackedEta?
+    /// When Relay stops looking for a rider (ISO 8601), for tasks that keep looking or are booked.
+    /// Count down to this while `status` is `.searching`.
+    public var searchExpiresAt: String?
     /// Lifecycle events, newest first (location updates excluded).
     public var events: [TaskEvent] = []
     public var finished = false
     public var error: String?
 
-    public init(taskId: String, status: TaskStatus? = nil, currentStageIndex: Int? = nil, eta: TrackedEta? = nil) {
+    public init(
+        taskId: String,
+        status: TaskStatus? = nil,
+        currentStageIndex: Int? = nil,
+        eta: TrackedEta? = nil,
+        searchExpiresAt: String? = nil
+    ) {
         self.taskId = taskId
         self.status = status
         self.currentStageIndex = currentStageIndex
         self.eta = eta
+        self.searchExpiresAt = searchExpiresAt
         self.finished = status?.isFinished ?? false
     }
 
@@ -64,6 +74,7 @@ public struct TaskTrackerState: Sendable, Equatable {
             if let status = e.type.status { next.status = status }
             next.finished = next.status?.isFinished ?? false
             if let index = e.currentStageIndex ?? e.nextStageIndex { next.currentStageIndex = index }
+            if let deadline = e.searchExpiresAt { next.searchExpiresAt = deadline }
             // The ETA belongs to a stop; drop it once the task moves on or ends.
             if next.finished || (next.eta != nil && next.currentStageIndex != nil && next.eta?.stageIndex != next.currentStageIndex) {
                 next.eta = nil

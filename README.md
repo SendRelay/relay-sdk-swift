@@ -7,7 +7,7 @@ Official [Relay](https://sendrelay.com.ng) SDK for iOS and macOS: show a deliver
 In Xcode: **File → Add Package Dependencies…**, then `https://github.com/SendRelay/relay-sdk-swift`. Or in `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/SendRelay/relay-sdk-swift", from: "1.7.0")
+.package(url: "https://github.com/SendRelay/relay-sdk-swift", from: "1.8.0")
 ```
 
 iOS 15+ and macOS 12+. No dependencies.
