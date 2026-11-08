@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.9.0 — 2026-11-08
+
+- New `TaskEventType` cases: `.stageArrived`, `.detailsUpdated` and `.riderUnassigned` (tasks created with `onRiderCancel: FIND_ANOTHER`), with `stageType` and `researchesLeft`. `TaskTracker` moves the task back to PENDING and clears the rider and ETA on `.riderUnassigned`.
+
 ## 1.8.0 — 2026-11-03
 
 - Keep looking for a rider and scheduled pickups ([dispatch strategies](https://docs.sendrelay.com.ng/tasks/keep-looking-and-scheduling)).

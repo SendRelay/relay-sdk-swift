@@ -1,7 +1,7 @@
 import Foundation
 
 /// The published SDK version. Kept in sync with the release tag by scripts/check-sdk-versions.mjs.
-public let relaySDKVersion = "1.8.0"
+public let relaySDKVersion = "1.9.0"
 
 /// A task lifecycle event from the server.
 public enum TaskEventType: String, Sendable, CaseIterable {
@@ -15,6 +15,13 @@ public enum TaskEventType: String, Sendable, CaseIterable {
     case assigned = "TASK_ASSIGNED"
     case inProgress = "TASK_IN_PROGRESS"
     case stageCompleted = "STAGE_COMPLETED"
+    /// The rider reached a stop (`stageIndex`, `stageType`), once per stop.
+    case stageArrived = "STAGE_ARRIVED"
+    /// The business edited notes, instructions or a stop's contact; read the task again.
+    case detailsUpdated = "TASK_DETAILS_UPDATED"
+    /// Opt-in (`onRiderCancel: FIND_ANOTHER`): the rider cancelled before pickup and Relay is
+    /// finding another. The task is PENDING again.
+    case riderUnassigned = "TASK_RIDER_UNASSIGNED"
     case completed = "TASK_COMPLETED"
     case failed = "TASK_FAILED"
     case cancelled = "TASK_CANCELLED"
@@ -29,6 +36,9 @@ public enum TaskEventType: String, Sendable, CaseIterable {
         case .assigned: return .assigned
         case .inProgress: return .inProgress
         case .stageCompleted: return nil
+        case .stageArrived: return nil
+        case .detailsUpdated: return nil
+        case .riderUnassigned: return .pending
         case .completed: return .completed
         case .failed: return .failed
         case .cancelled: return .cancelled
@@ -84,6 +94,10 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
     public let searchExpiresAt: String?
     /// TASK_RIDERS_NEARBY: how many eligible riders were found.
     public let ridersNearby: Int?
+    /// STAGE_ARRIVED: PICKUP or DROPOFF.
+    public let stageType: String?
+    /// TASK_RIDER_UNASSIGNED: further rider cancels the task can survive before it ends CANCELLED.
+    public let researchesLeft: Int?
     /// When it happened (ISO 8601), from whichever timestamp the event carries.
     public let at: String?
 
@@ -91,6 +105,7 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
         case type, taskId, status, riderId, developerId, currentStageIndex, stageIndex, nextStageIndex, reason
         case cancelledBy, deliveryFee, completionCodeVerified, timestamp, assignedAt, startedAt, completedAt
         case failedAt, cancelledAt, offeredAt, strategy, pickupAt, searchExpiresAt, ridersNearby, searchingAt, detectedAt
+        case stageType, arrivedAt, researchesLeft
     }
 
     public init(from decoder: Decoder) throws {
@@ -115,8 +130,11 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
         pickupAt = try? c.decodeIfPresent(String.self, forKey: .pickupAt)
         searchExpiresAt = try? c.decodeIfPresent(String.self, forKey: .searchExpiresAt)
         ridersNearby = try? c.decodeIfPresent(Int.self, forKey: .ridersNearby)
+        stageType = try? c.decodeIfPresent(String.self, forKey: .stageType)
+        researchesLeft = try? c.decodeIfPresent(Int.self, forKey: .researchesLeft)
         let timestamps: [CodingKeys] = [
             .timestamp, .completedAt, .cancelledAt, .failedAt, .assignedAt, .startedAt, .searchingAt, .detectedAt, .offeredAt,
+            .arrivedAt,
         ]
         at = timestamps.lazy.compactMap { try? c.decodeIfPresent(String.self, forKey: $0) }.first
     }

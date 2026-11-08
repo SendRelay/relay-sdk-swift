@@ -79,6 +79,12 @@ public struct TaskTrackerState: Sendable, Equatable {
             if next.finished || (next.eta != nil && next.currentStageIndex != nil && next.eta?.stageIndex != next.currentStageIndex) {
                 next.eta = nil
             }
+            // The rider who cancelled is gone; their last position and ETA no longer apply.
+            if e.type == .riderUnassigned {
+                next.rider = nil
+                next.riderId = nil
+                next.eta = nil
+            }
             next.events = Array(([e] + events).prefix(maxEvents))
         case .riderLocation(let update):
             guard update.taskId == taskId else { return self }

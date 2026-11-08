@@ -28,6 +28,8 @@ private func apiJSON(_ event: RelayEvent) -> [String: Any] {
         out["pickupAt"] = e.pickupAt
         out["searchExpiresAt"] = e.searchExpiresAt
         out["ridersNearby"] = e.ridersNearby
+        out["stageType"] = e.stageType
+        out["researchesLeft"] = e.researchesLeft
         return out
     case .riderLocation(let u):
         var out: [String: Any] = [
