@@ -85,3 +85,25 @@ public enum RelayProtocol {
         return exp - now.timeIntervalSince1970
     }
 }
+
+/// Delivery order for task events. Each carries the task's `revision`, which only grows; an event
+/// at or below the last one delivered for its task is a duplicate or arrived late and is dropped.
+/// Events without a revision (location updates, older servers) always pass.
+public struct RevisionGate: Sendable {
+    private var last: [String: Int] = [:]
+
+    public init() {}
+
+    /// True when the event should be delivered; records its revision.
+    public mutating func admit(_ event: RelayEvent) -> Bool {
+        guard case .task(let e) = event, let revision = e.revision else { return true }
+        if let seen = last[e.taskId], revision <= seen { return false }
+        last[e.taskId] = revision
+        return true
+    }
+
+    /// Forget a task (after stopping listening to it).
+    public mutating func forget(_ taskId: String) {
+        last[taskId] = nil
+    }
+}

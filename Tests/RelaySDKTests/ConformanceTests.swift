@@ -30,6 +30,7 @@ private func apiJSON(_ event: RelayEvent) -> [String: Any] {
         out["ridersNearby"] = e.ridersNearby
         out["stageType"] = e.stageType
         out["researchesLeft"] = e.researchesLeft
+        out["revision"] = e.revision
         return out
     case .riderLocation(let u):
         var out: [String: Any] = [
@@ -83,6 +84,29 @@ final class ConformanceTests: XCTestCase {
             let json = apiJSON(parsed)
             for (key, want) in expect["fields"] as? [String: Any] ?? [:] {
                 XCTAssertTrue(same(lookup(json, key), want), "\(name): \(key) = \(String(describing: lookup(json, key))), want \(want)")
+            }
+        }
+    }
+
+    func testOrdering() throws {
+        let cases = try XCTUnwrap(read("realtime/ordering.json")["cases"] as? [[String: Any]])
+        XCTAssertGreaterThan(cases.count, 3)
+        for c in cases {
+            let name = c["name"] as? String ?? "?"
+            var gate = RevisionGate()
+            var delivered: [RelayEvent] = []
+            for frame in c["frames"] as! [[String: Any]] {
+                if let event = RelayProtocol.parse(try JSONSerialization.data(withJSONObject: frame)), gate.admit(event) {
+                    delivered.append(event)
+                }
+            }
+            let expect = c["expect"] as! [[String: Any]]
+            XCTAssertEqual(delivered.map(\.name), expect.map { $0["event"] as! String }, name)
+            for (event, want) in zip(delivered, expect) {
+                let json = apiJSON(event)
+                for (key, value) in want["fields"] as? [String: Any] ?? [:] {
+                    XCTAssertTrue(same(lookup(json, key), value), "\(name): \(key) = \(String(describing: lookup(json, key))), want \(value)")
+                }
             }
         }
     }

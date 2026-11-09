@@ -60,6 +60,7 @@ public actor RelayRealtimeClient {
     private var reconnectAttempt = 0
     private var lastPongAt = Date()
     private var background: [Task<Void, Never>] = []
+    private var order = RevisionGate()
 
     public init(options: RelayClientOptions = RelayClientOptions(), session: URLSession = .shared, getToken: @escaping TokenProvider) {
         self.options = options
@@ -90,6 +91,7 @@ public actor RelayRealtimeClient {
     /// Stop receiving events for a task. The socket stays open for other tasks.
     public func stopListening(_ taskId: String) async {
         listening.removeAll { $0 == taskId }
+        order.forget(taskId)
         if isConnected { try? await send(RelayProtocol.unsubscribe(taskId: taskId)) }
     }
 
@@ -176,7 +178,7 @@ public actor RelayRealtimeClient {
                 lastPongAt = Date()
                 continue
             }
-            if let event = RelayProtocol.parse(data) { broadcaster.emit(event) }
+            if let event = RelayProtocol.parse(data), order.admit(event) { broadcaster.emit(event) }
         }
     }
 

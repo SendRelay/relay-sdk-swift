@@ -1,7 +1,7 @@
 import Foundation
 
 /// The published SDK version. Kept in sync with the release tag by scripts/check-sdk-versions.mjs.
-public let relaySDKVersion = "1.9.0"
+public let relaySDKVersion = "1.10.0"
 
 /// A task lifecycle event from the server.
 public enum TaskEventType: String, Sendable, CaseIterable {
@@ -100,12 +100,16 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
     public let researchesLeft: Int?
     /// When it happened (ISO 8601), from whichever timestamp the event carries.
     public let at: String?
+    /// The task's revision after this event, as on webhooks and task reads; nil when the frame has
+    /// none (older servers). The client drops a frame at or below the last revision it delivered for
+    /// the task, so events arrive in order and once.
+    public let revision: Int?
 
     enum CodingKeys: String, CodingKey {
         case type, taskId, status, riderId, developerId, currentStageIndex, stageIndex, nextStageIndex, reason
         case cancelledBy, deliveryFee, completionCodeVerified, timestamp, assignedAt, startedAt, completedAt
         case failedAt, cancelledAt, offeredAt, strategy, pickupAt, searchExpiresAt, ridersNearby, searchingAt, detectedAt
-        case stageType, arrivedAt, researchesLeft
+        case stageType, arrivedAt, researchesLeft, revision
     }
 
     public init(from decoder: Decoder) throws {
@@ -132,6 +136,7 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
         ridersNearby = try? c.decodeIfPresent(Int.self, forKey: .ridersNearby)
         stageType = try? c.decodeIfPresent(String.self, forKey: .stageType)
         researchesLeft = try? c.decodeIfPresent(Int.self, forKey: .researchesLeft)
+        revision = try? c.decodeIfPresent(Int.self, forKey: .revision)
         let timestamps: [CodingKeys] = [
             .timestamp, .completedAt, .cancelledAt, .failedAt, .assignedAt, .startedAt, .searchingAt, .detectedAt, .offeredAt,
             .arrivedAt,

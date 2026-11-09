@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.10.0 — 2026-11-09
+
+- `TaskEvent.revision` and `RevisionGate`. Task events carry `revision` (the task's revision after the event, as on webhooks). The client delivers each task's events in order and once: a frame at or below the last revision it delivered for that task is dropped. Location updates and frames without a revision are always delivered.
+
 ## 1.9.0 — 2026-11-08
 
 - New `TaskEventType` cases: `.stageArrived`, `.detailsUpdated` and `.riderUnassigned` (tasks created with `onRiderCancel: FIND_ANOTHER`), with `stageType` and `researchesLeft`. `TaskTracker` moves the task back to PENDING and clears the rider and ETA on `.riderUnassigned`.
