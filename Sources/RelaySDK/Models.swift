@@ -5,7 +5,7 @@ public let relaySDKVersion = "1.10.0"
 
 /// A task lifecycle event from the server.
 public enum TaskEventType: String, Sendable, CaseIterable {
-    /// A booked task's search opened: Relay is now looking for a rider.
+    /// A booked task's search opened: SendRelay is now looking for a rider.
     case dispatchStarted = "TASK_DISPATCH_STARTED"
     /// The task keeps looking for a rider after its first offers, until `searchExpiresAt`.
     case searching = "TASK_SEARCHING"
@@ -19,7 +19,7 @@ public enum TaskEventType: String, Sendable, CaseIterable {
     case stageArrived = "STAGE_ARRIVED"
     /// The business edited notes, instructions or a stop's contact; read the task again.
     case detailsUpdated = "TASK_DETAILS_UPDATED"
-    /// Opt-in (`onRiderCancel: FIND_ANOTHER`): the rider cancelled before pickup and Relay is
+    /// Opt-in (`onRiderCancel: FIND_ANOTHER`): the rider cancelled before pickup and SendRelay is
     /// finding another. The task is PENDING again.
     case riderUnassigned = "TASK_RIDER_UNASSIGNED"
     case completed = "TASK_COMPLETED"
@@ -47,7 +47,7 @@ public enum TaskEventType: String, Sendable, CaseIterable {
 }
 
 public enum TaskStatus: String, Sendable, Codable {
-    /// Booked for a pickup time; Relay has not started looking yet.
+    /// Booked for a pickup time; SendRelay has not started looking yet.
     case scheduled = "SCHEDULED"
     case pending = "PENDING"
     /// Still looking for a rider after the first offers.
@@ -68,7 +68,7 @@ public enum TaskStatus: String, Sendable, Codable {
 public struct TaskEvent: Sendable, Decodable, Equatable {
     public let type: TaskEventType
     public let taskId: String
-    /// Nil when the server sent no status, or one this SDK version does not know: Relay adds
+    /// Nil when the server sent no status, or one this SDK version does not know: SendRelay adds
     /// statuses over time, and `rawStatus` keeps whatever the server sent.
     public let status: TaskStatus?
     /// The status exactly as the server sent it, including ones newer than this SDK.
@@ -90,7 +90,7 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
     public let strategy: String?
     /// TASK_DISPATCH_STARTED: when the rider should reach the pickup (ISO 8601).
     public let pickupAt: String?
-    /// TASK_DISPATCH_STARTED / TASK_SEARCHING: when Relay stops looking (ISO 8601).
+    /// TASK_DISPATCH_STARTED / TASK_SEARCHING: when SendRelay stops looking (ISO 8601).
     public let searchExpiresAt: String?
     /// TASK_RIDERS_NEARBY: how many eligible riders were found.
     public let ridersNearby: Int?

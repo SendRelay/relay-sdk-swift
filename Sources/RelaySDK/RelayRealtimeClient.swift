@@ -30,7 +30,7 @@ public struct RelayClientOptions: Sendable {
     public init() {}
 }
 
-/// Tracks tasks live over Relay's realtime socket.
+/// Tracks tasks live over SendRelay's realtime socket.
 ///
 /// Your server mints a short-lived token (`relay.auth.createWebSocketToken` in the server SDKs);
 /// the client asks for one through `getToken` whenever it connects.

@@ -1,6 +1,6 @@
 # RelaySDK for Swift
 
-Official [Relay](https://sendrelay.com.ng) SDK for iOS and macOS: show a delivery's status, the rider on a map and a live arrival time.
+Official [SendRelay](https://sendrelay.com.ng) SDK for iOS and macOS: show a delivery's status, the rider on a map and a live arrival time.
 
 ## Install
 

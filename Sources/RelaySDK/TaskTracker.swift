@@ -42,7 +42,7 @@ public struct TaskTrackerState: Sendable, Equatable {
     public var rider: RiderLocation?
     public var riderId: String?
     public var eta: TrackedEta?
-    /// When Relay stops looking for a rider (ISO 8601), for tasks that keep looking or are booked.
+    /// When SendRelay stops looking for a rider (ISO 8601), for tasks that keep looking or are booked.
     /// Count down to this while `status` is `.searching`.
     public var searchExpiresAt: String?
     /// Lifecycle events, newest first (location updates excluded).
