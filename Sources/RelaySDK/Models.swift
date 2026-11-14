@@ -1,7 +1,7 @@
 import Foundation
 
 /// The published SDK version. Kept in sync with the release tag by scripts/check-sdk-versions.mjs.
-public let relaySDKVersion = "1.10.0"
+public let relaySDKVersion = "1.11.0"
 
 /// A task lifecycle event from the server.
 public enum TaskEventType: String, Sendable, CaseIterable {

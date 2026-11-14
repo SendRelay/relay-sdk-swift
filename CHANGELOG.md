@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11.0 — 2026-11-14
+
+- Version aligned with the app SDKs. Motorcycles are always `MOTORCYCLE`; the API no longer uses `BIKE`. No code change.
+
 ## 1.10.0 — 2026-11-09
 
 - `TaskEvent.revision` and `RevisionGate`. Task events carry `revision` (the task's revision after the event, as on webhooks). The client delivers each task's events in order and once: a frame at or below the last revision it delivered for that task is dropped. Location updates and frames without a revision are always delivered.
