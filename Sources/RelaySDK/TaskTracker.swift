@@ -29,6 +29,21 @@ public struct TrackedEta: Sendable, Equatable {
     }
 }
 
+/// A pooled delivery's route: grouped with other deliveries at its final price, or going alone at
+/// its maximum. From TASK_POOLING_GROUPED and TASK_POOLING_SOLO.
+public struct TrackedPooling: Sendable, Equatable {
+    public enum State: String, Sendable { case grouped = "GROUPED", solo = "SOLO" }
+    public let state: State
+    /// Most it can cost, in kobo.
+    public let maxTotal: Int?
+    /// What it costs once grouped, in kobo; nil while going alone (it pays `maxTotal`).
+    public let finalTotal: Int?
+    /// How many other deliveries share the route (never who they are).
+    public let sharedWith: Int?
+    public let plannedPickupAt: String?
+    public let plannedDeliveryAt: String?
+}
+
 public enum TrackerConnection: String, Sendable {
     case idle, connecting, live, reconnecting, offline
 }
@@ -45,6 +60,11 @@ public struct TaskTrackerState: Sendable, Equatable {
     /// When SendRelay stops looking for a rider (ISO 8601), for tasks that keep looking or are booked.
     /// Count down to this while `status` is `.searching`.
     public var searchExpiresAt: String?
+    /// Pooled delivery only: its route and price, once grouped or sent alone.
+    public var pooling: TrackedPooling?
+    /// Pooled delivery only: stops the rider makes before this delivery's next one (0 when it is
+    /// next). While above 0 there is no ETA and the position may be withheld: show the planned times.
+    public var stopsBefore: Int?
     /// Lifecycle events, newest first (location updates excluded).
     public var events: [TaskEvent] = []
     public var finished = false
@@ -55,8 +75,10 @@ public struct TaskTrackerState: Sendable, Equatable {
         status: TaskStatus? = nil,
         currentStageIndex: Int? = nil,
         eta: TrackedEta? = nil,
-        searchExpiresAt: String? = nil
+        searchExpiresAt: String? = nil,
+        stopsBefore: Int? = nil
     ) {
+        self.stopsBefore = stopsBefore
         self.taskId = taskId
         self.status = status
         self.currentStageIndex = currentStageIndex
@@ -85,6 +107,19 @@ public struct TaskTrackerState: Sendable, Equatable {
                 next.riderId = nil
                 next.eta = nil
             }
+            if e.type == .poolingGrouped || e.type == .poolingSolo {
+                let grouped = e.type == .poolingGrouped
+                next.pooling = TrackedPooling(
+                    state: grouped ? .grouped : .solo,
+                    maxTotal: e.maxTotal,
+                    finalTotal: grouped ? e.finalTotal : nil,
+                    sharedWith: grouped ? e.sharedWith : nil,
+                    plannedPickupAt: grouped ? e.plannedPickupAt : nil,
+                    plannedDeliveryAt: grouped ? e.plannedDeliveryAt : nil
+                )
+                // A pooled delivery going alone is tracked like any other task from here.
+                if !grouped { next.stopsBefore = nil }
+            }
             next.events = Array(([e] + events).prefix(maxEvents))
         case .riderLocation(let update):
             guard update.taskId == taskId else { return self }
@@ -100,7 +135,11 @@ public struct TaskTrackerState: Sendable, Equatable {
                     arrivesAt: reported.addingTimeInterval(TimeInterval(eta.seconds)),
                     updatedAt: reported
                 )
+            } else if let before = update.stopsBefore, before > 0 {
+                // Pooled delivery: an ETA only while this delivery's stop is next.
+                next.eta = nil
             }
+            if let before = update.stopsBefore { next.stopsBefore = before }
         case .connectionOpen:
             next.connection = .live
             next.error = nil

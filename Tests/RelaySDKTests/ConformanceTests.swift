@@ -31,6 +31,10 @@ private func apiJSON(_ event: RelayEvent) -> [String: Any] {
         out["stageType"] = e.stageType
         out["researchesLeft"] = e.researchesLeft
         out["revision"] = e.revision
+        out["sharedWith"] = e.sharedWith
+        out["maxTotal"] = e.maxTotal
+        out["finalTotal"] = e.finalTotal
+        if e.wave != nil || e.waveDate != nil { out["window"] = ["wave": e.wave as Any, "date": e.waveDate as Any] }
         return out
     case .riderLocation(let u):
         var out: [String: Any] = [
@@ -39,6 +43,7 @@ private func apiJSON(_ event: RelayEvent) -> [String: Any] {
         ]
         out["riderId"] = u.riderId
         out["timestamp"] = u.timestamp
+        out["stopsBefore"] = u.stopsBefore
         if let eta = u.eta { out["eta"] = ["stageIndex": eta.stageIndex, "seconds": eta.seconds, "meters": eta.meters] }
         return out
     default:

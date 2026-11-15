@@ -1,7 +1,7 @@
 import Foundation
 
 /// The published SDK version. Kept in sync with the release tag by scripts/check-sdk-versions.mjs.
-public let relaySDKVersion = "1.11.0"
+public let relaySDKVersion = "1.12.0"
 
 /// A task lifecycle event from the server.
 public enum TaskEventType: String, Sendable, CaseIterable {
@@ -22,6 +22,11 @@ public enum TaskEventType: String, Sendable, CaseIterable {
     /// Opt-in (`onRiderCancel: FIND_ANOTHER`): the rider cancelled before pickup and SendRelay is
     /// finding another. The task is PENDING again.
     case riderUnassigned = "TASK_RIDER_UNASSIGNED"
+    /// Pooled delivery: the rider started the shared route; `finalTotal` is the price (never above
+    /// `maxTotal`). Comes after TASK_ASSIGNED.
+    case poolingGrouped = "TASK_POOLING_GROUPED"
+    /// Pooled delivery: it goes alone at `maxTotal` through ordinary dispatch; dispatch events follow.
+    case poolingSolo = "TASK_POOLING_SOLO"
     case completed = "TASK_COMPLETED"
     case failed = "TASK_FAILED"
     case cancelled = "TASK_CANCELLED"
@@ -39,6 +44,8 @@ public enum TaskEventType: String, Sendable, CaseIterable {
         case .stageArrived: return nil
         case .detailsUpdated: return nil
         case .riderUnassigned: return .pending
+        case .poolingGrouped: return nil
+        case .poolingSolo: return nil
         case .completed: return .completed
         case .failed: return .failed
         case .cancelled: return .cancelled
@@ -98,6 +105,18 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
     public let stageType: String?
     /// TASK_RIDER_UNASSIGNED: further rider cancels the task can survive before it ends CANCELLED.
     public let researchesLeft: Int?
+    /// TASK_POOLING_*: the wave (for example MIDDAY) and its date (YYYY-MM-DD, Lagos).
+    public let wave: String?
+    public let waveDate: String?
+    /// TASK_POOLING_GROUPED: how many other deliveries share the route (never who they are).
+    public let sharedWith: Int?
+    /// TASK_POOLING_*: the most it can cost, in kobo.
+    public let maxTotal: Int?
+    /// TASK_POOLING_GROUPED: what it costs, in kobo.
+    public let finalTotal: Int?
+    /// TASK_POOLING_GROUPED: the planned pickup and delivery times (ISO 8601).
+    public let plannedPickupAt: String?
+    public let plannedDeliveryAt: String?
     /// When it happened (ISO 8601), from whichever timestamp the event carries.
     public let at: String?
     /// The task's revision after this event, as on webhooks and task reads; nil when the frame has
@@ -110,6 +129,12 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
         case cancelledBy, deliveryFee, completionCodeVerified, timestamp, assignedAt, startedAt, completedAt
         case failedAt, cancelledAt, offeredAt, strategy, pickupAt, searchExpiresAt, ridersNearby, searchingAt, detectedAt
         case stageType, arrivedAt, researchesLeft, revision
+        case window, sharedWith, maxTotal, finalTotal, plannedPickupAt, plannedDeliveryAt, groupedAt, soloAt
+    }
+
+    private struct PooledWindow: Decodable {
+        let wave: String?
+        let date: String?
     }
 
     public init(from decoder: Decoder) throws {
@@ -137,9 +162,17 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
         stageType = try? c.decodeIfPresent(String.self, forKey: .stageType)
         researchesLeft = try? c.decodeIfPresent(Int.self, forKey: .researchesLeft)
         revision = try? c.decodeIfPresent(Int.self, forKey: .revision)
+        let window = try? c.decodeIfPresent(PooledWindow.self, forKey: .window)
+        wave = window?.wave
+        waveDate = window?.date
+        sharedWith = try? c.decodeIfPresent(Int.self, forKey: .sharedWith)
+        maxTotal = try? c.decodeIfPresent(Int.self, forKey: .maxTotal)
+        finalTotal = try? c.decodeIfPresent(Int.self, forKey: .finalTotal)
+        plannedPickupAt = try? c.decodeIfPresent(String.self, forKey: .plannedPickupAt)
+        plannedDeliveryAt = try? c.decodeIfPresent(String.self, forKey: .plannedDeliveryAt)
         let timestamps: [CodingKeys] = [
             .timestamp, .completedAt, .cancelledAt, .failedAt, .assignedAt, .startedAt, .searchingAt, .detectedAt, .offeredAt,
-            .arrivedAt,
+            .arrivedAt, .groupedAt, .soloAt,
         ]
         at = timestamps.lazy.compactMap { try? c.decodeIfPresent(String.self, forKey: $0) }.first
     }
@@ -188,12 +221,15 @@ public struct RiderLocationUpdate: Sendable, Decodable, Equatable {
     /// The rider's ETA to their next stop, from their navigation route and live traffic. Nil when
     /// the rider's app hasn't reported one.
     public let eta: RiderRouteEta?
+    /// Pooled delivery: stops the rider makes before this delivery's next one; 0 when it is next
+    /// (the update then has an `eta`). Nil on every other task.
+    public let stopsBefore: Int?
     /// When the rider reported this (ISO 8601). `eta.seconds` counts down from here.
     public let timestamp: String?
     /// True when the server replayed the last known position on subscribe.
     public let replayed: Bool?
 
-    enum CodingKeys: String, CodingKey { case taskId, riderId, location, eta, timestamp, replayed }
+    enum CodingKeys: String, CodingKey { case taskId, riderId, location, eta, stopsBefore, timestamp, replayed }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -202,6 +238,7 @@ public struct RiderLocationUpdate: Sendable, Decodable, Equatable {
         location = try c.decode(RiderLocation.self, forKey: .location)
         // A malformed ETA is dropped rather than losing the position.
         eta = try? c.decodeIfPresent(RiderRouteEta.self, forKey: .eta)
+        stopsBefore = try? c.decodeIfPresent(Int.self, forKey: .stopsBefore)
         timestamp = try? c.decodeIfPresent(String.self, forKey: .timestamp)
         replayed = try? c.decodeIfPresent(Bool.self, forKey: .replayed)
     }
