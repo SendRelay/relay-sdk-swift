@@ -1,7 +1,7 @@
 import Foundation
 
 /// The published SDK version. Kept in sync with the release tag by scripts/check-sdk-versions.mjs.
-public let relaySDKVersion = "1.12.0"
+public let relaySDKVersion = "1.13.0"
 
 /// A task lifecycle event from the server.
 public enum TaskEventType: String, Sendable, CaseIterable {
@@ -27,6 +27,14 @@ public enum TaskEventType: String, Sendable, CaseIterable {
     case poolingGrouped = "TASK_POOLING_GROUPED"
     /// Pooled delivery: it goes alone at `maxTotal` through ordinary dispatch; dispatch events follow.
     case poolingSolo = "TASK_POOLING_SOLO"
+    /// Errand: a work stop did not get done (`stage.status` FAILED, `stage.reason` why). The task
+    /// goes on at `nextStageIndex`, or ends when nothing is left to do.
+    case stageFailed = "STAGE_FAILED"
+    /// Errand: the rider asks you something (`approval`). Answer through the server API before
+    /// `approval.expiresAt`.
+    case approvalRequested = "APPROVAL_REQUESTED"
+    /// Errand: a question was answered, timed out or withdrawn (`approval.status`).
+    case approvalResolved = "APPROVAL_RESOLVED"
     case completed = "TASK_COMPLETED"
     case failed = "TASK_FAILED"
     case cancelled = "TASK_CANCELLED"
@@ -46,6 +54,9 @@ public enum TaskEventType: String, Sendable, CaseIterable {
         case .riderUnassigned: return .pending
         case .poolingGrouped: return nil
         case .poolingSolo: return nil
+        case .stageFailed: return nil
+        case .approvalRequested: return nil
+        case .approvalResolved: return nil
         case .completed: return .completed
         case .failed: return .failed
         case .cancelled: return .cancelled
@@ -69,6 +80,61 @@ public enum TaskStatus: String, Sendable, Codable {
 
     /// True for COMPLETED, FAILED and CANCELLED.
     public var isFinished: Bool { self == .completed || self == .failed || self == .cancelled }
+}
+
+/// STAGE_FAILED: the errand stop that did not get done.
+public struct ErrandStageOutcome: Sendable, Decodable, Equatable {
+    /// QUEUE, PURCHASE, PAYMENT, INSPECTION, CUSTOM (or a newer type).
+    public let type: String
+    /// Your name for the stop, if you gave one.
+    public let reference: String?
+    /// FAILED or SKIPPED (or a newer status).
+    public let status: String
+    /// OUT_OF_STOCK, CLOSED, REFUSED, NOT_READY, PAYMENT_FAILED, OTHER (or a newer reason).
+    public let reason: String?
+    /// What the rider wrote.
+    public let note: String?
+    /// When it ended (ISO 8601).
+    public let endedAt: String?
+}
+
+/// APPROVAL_REQUESTED / APPROVAL_RESOLVED: a question from the rider on an errand. Answer it with
+/// the server SDK (`tasks.decideApproval`); the full request, with what approving does to the price,
+/// is on `tasks.approvals`.
+public struct ErrandApproval: Sendable, Decodable, Equatable {
+    public let id: String
+    public let stageIndex: Int?
+    /// SUBSTITUTE, PRICE_ABOVE_MAX, OVER_SPEND_LIMIT, MORE_TIME, QUESTION (or a newer kind).
+    public let kind: String
+    /// PENDING, APPROVED, DECLINED, EXPIRED (or a newer status).
+    public let status: String
+    /// The question in plain words, as the rider app shows it.
+    public let question: String?
+    /// A photo the rider attached (a file path; open it through the server API).
+    public let photo: String?
+    /// When the rider stops waiting (ISO 8601).
+    public let expiresAt: String?
+    /// The note sent with the answer.
+    public let note: String?
+    public let decidedAt: String?
+
+    enum CodingKeys: String, CodingKey { case id, stageIndex, kind, status, question, photo, expiresAt, note, decidedAt }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        kind = try c.decode(String.self, forKey: .kind)
+        status = try c.decode(String.self, forKey: .status)
+        stageIndex = try? c.decodeIfPresent(Int.self, forKey: .stageIndex)
+        question = try? c.decodeIfPresent(String.self, forKey: .question)
+        photo = try? c.decodeIfPresent(String.self, forKey: .photo)
+        expiresAt = try? c.decodeIfPresent(String.self, forKey: .expiresAt)
+        note = try? c.decodeIfPresent(String.self, forKey: .note)
+        decidedAt = try? c.decodeIfPresent(String.self, forKey: .decidedAt)
+    }
+
+    /// True while the rider is waiting for your answer.
+    public var isPending: Bool { status == "PENDING" }
 }
 
 /// One task lifecycle event. Fields the server didn't send are nil.
@@ -101,8 +167,15 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
     public let searchExpiresAt: String?
     /// TASK_RIDERS_NEARBY: how many eligible riders were found.
     public let ridersNearby: Int?
-    /// STAGE_ARRIVED: PICKUP or DROPOFF.
+    /// STAGE_ARRIVED: PICKUP or DROPOFF (or, on an errand, the work stop's type). STAGE_FAILED: the
+    /// failed stop's type.
     public let stageType: String?
+    /// STAGE_FAILED: the stop that did not get done.
+    public let stage: ErrandStageOutcome?
+    /// STAGE_FAILED: how many stops the task has.
+    public let totalStages: Int?
+    /// APPROVAL_REQUESTED / APPROVAL_RESOLVED: the rider's question.
+    public let approval: ErrandApproval?
     /// TASK_RIDER_UNASSIGNED: further rider cancels the task can survive before it ends CANCELLED.
     public let researchesLeft: Int?
     /// TASK_POOLING_*: the wave (for example MIDDAY) and its date (YYYY-MM-DD, Lagos).
@@ -130,6 +203,7 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
         case failedAt, cancelledAt, offeredAt, strategy, pickupAt, searchExpiresAt, ridersNearby, searchingAt, detectedAt
         case stageType, arrivedAt, researchesLeft, revision
         case window, sharedWith, maxTotal, finalTotal, plannedPickupAt, plannedDeliveryAt, groupedAt, soloAt
+        case stage, totalStages, approval
     }
 
     private struct PooledWindow: Decodable {
@@ -159,7 +233,11 @@ public struct TaskEvent: Sendable, Decodable, Equatable {
         pickupAt = try? c.decodeIfPresent(String.self, forKey: .pickupAt)
         searchExpiresAt = try? c.decodeIfPresent(String.self, forKey: .searchExpiresAt)
         ridersNearby = try? c.decodeIfPresent(Int.self, forKey: .ridersNearby)
-        stageType = try? c.decodeIfPresent(String.self, forKey: .stageType)
+        // A malformed stage or approval is dropped rather than losing the event.
+        stage = try? c.decodeIfPresent(ErrandStageOutcome.self, forKey: .stage)
+        totalStages = try? c.decodeIfPresent(Int.self, forKey: .totalStages)
+        approval = try? c.decodeIfPresent(ErrandApproval.self, forKey: .approval)
+        stageType = (try? c.decodeIfPresent(String.self, forKey: .stageType)) ?? stage?.type
         researchesLeft = try? c.decodeIfPresent(Int.self, forKey: .researchesLeft)
         revision = try? c.decodeIfPresent(Int.self, forKey: .revision)
         let window = try? c.decodeIfPresent(PooledWindow.self, forKey: .window)

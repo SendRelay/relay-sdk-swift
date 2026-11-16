@@ -35,6 +35,26 @@ private func apiJSON(_ event: RelayEvent) -> [String: Any] {
         out["maxTotal"] = e.maxTotal
         out["finalTotal"] = e.finalTotal
         if e.wave != nil || e.waveDate != nil { out["window"] = ["wave": e.wave as Any, "date": e.waveDate as Any] }
+        out["nextStageIndex"] = e.nextStageIndex
+        out["totalStages"] = e.totalStages
+        if let stage = e.stage {
+            var s: [String: Any] = ["type": stage.type, "status": stage.status]
+            s["reference"] = stage.reference
+            s["reason"] = stage.reason
+            s["note"] = stage.note
+            s["endedAt"] = stage.endedAt
+            out["stage"] = s
+        }
+        if let a = e.approval {
+            var s: [String: Any] = ["id": a.id, "kind": a.kind, "status": a.status]
+            s["stageIndex"] = a.stageIndex
+            s["question"] = a.question
+            s["photo"] = a.photo
+            s["expiresAt"] = a.expiresAt
+            s["note"] = a.note
+            s["decidedAt"] = a.decidedAt
+            out["approval"] = s
+        }
         return out
     case .riderLocation(let u):
         var out: [String: Any] = [
@@ -206,6 +226,30 @@ final class TaskTrackerStateTests: XCTestCase {
         XCTAssertEqual(state.status, .searching, "riders nearby leaves the status alone")
         XCTAssertEqual(state.events.first?.ridersNearby, 2)
         XCTAssertEqual(state.events.map(\.type), [.ridersNearby, .searching, .dispatchStarted])
+    }
+
+    func testFollowsAnErrand() {
+        var state = TaskTrackerState(taskId: "t1", status: .inProgress, currentStageIndex: 0)
+        state = state.applying(event(#"{"type":"STAGE_FAILED","taskId":"t1","stageIndex":0,"stage":{"type":"QUEUE","reference":null,"status":"FAILED","reason":"CLOSED","note":"Shut for a holiday","endedAt":"2026-11-16T10:20:00.000Z"},"nextStageIndex":1,"totalStages":3,"timestamp":"2026-11-16T10:20:00.000Z","revision":5}"#))
+        XCTAssertEqual(state.currentStageIndex, 1)
+        XCTAssertEqual(state.status, .inProgress, "a failed stop leaves the status alone")
+        XCTAssertEqual(state.events.first?.stage?.reason, "CLOSED")
+        XCTAssertEqual(state.events.first?.stageType, "QUEUE")
+
+        let asked = #"{"type":"APPROVAL_REQUESTED","taskId":"t1","stageIndex":1,"approval":{"id":"apr_1","stageIndex":1,"kind":"SUBSTITUTE","status":"PENDING","question":"Peak milk 400g is out. Buy the 1 kg pack?","proposal":{},"photo":null,"expiresAt":"2026-11-16T10:40:00.000Z","note":null,"decidedAt":null},"revision":6}"#
+        state = state.applying(event(asked))
+        XCTAssertEqual(state.approval?.kind, "SUBSTITUTE")
+        XCTAssertTrue(state.approval?.isPending ?? false)
+
+        // Another question's answer leaves this one open.
+        state = state.applying(event(#"{"type":"APPROVAL_RESOLVED","taskId":"t1","stageIndex":1,"approval":{"id":"apr_0","kind":"MORE_TIME","status":"EXPIRED"},"revision":7}"#))
+        XCTAssertEqual(state.approval?.id, "apr_1")
+        state = state.applying(event(#"{"type":"APPROVAL_RESOLVED","taskId":"t1","stageIndex":1,"approval":{"id":"apr_1","kind":"SUBSTITUTE","status":"APPROVED","note":"Yes"},"revision":8}"#))
+        XCTAssertNil(state.approval)
+
+        state = state.applying(event(asked.replacingOccurrences(of: "\"revision\":6", with: "\"revision\":9")))
+        state = state.applying(event(#"{"type":"TASK_COMPLETED","taskId":"t1","status":"COMPLETED"}"#))
+        XCTAssertNil(state.approval, "nothing is open once the task ends")
     }
 
     func testIgnoresOtherTasks() {

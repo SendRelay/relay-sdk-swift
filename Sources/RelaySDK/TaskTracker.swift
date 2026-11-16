@@ -65,6 +65,9 @@ public struct TaskTrackerState: Sendable, Equatable {
     /// Pooled delivery only: stops the rider makes before this delivery's next one (0 when it is
     /// next). While above 0 there is no ETA and the position may be withheld: show the planned times.
     public var stopsBefore: Int?
+    /// Errand only: the rider's open question, waiting for your answer; nil once it is answered,
+    /// times out, or the task ends.
+    public var approval: ErrandApproval?
     /// Lifecycle events, newest first (location updates excluded).
     public var events: [TaskEvent] = []
     public var finished = false
@@ -120,6 +123,12 @@ public struct TaskTrackerState: Sendable, Equatable {
                 // A pooled delivery going alone is tracked like any other task from here.
                 if !grouped { next.stopsBefore = nil }
             }
+            if e.type == .approvalRequested, let approval = e.approval, approval.isPending {
+                next.approval = approval
+            } else if e.type == .approvalResolved, next.approval == nil || next.approval?.id == e.approval?.id {
+                next.approval = nil
+            }
+            if next.finished { next.approval = nil }
             next.events = Array(([e] + events).prefix(maxEvents))
         case .riderLocation(let update):
             guard update.taskId == taskId else { return self }
